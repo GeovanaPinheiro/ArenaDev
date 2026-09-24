@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dev Arena - Prompt & Logic</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc; /* slate-50 */
+            color: #334155; /* slate-700 */
+        }
+
+        .code-font {
+            font-family: 'Fira Code', monospace;
+        }
+
+        .glass-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        }
+
+        /* Podium styling */
+        .podium-1 { height: 180px; background: linear-gradient(180deg, #eff6ff 0%, #bfdbfe 100%); border-top: 4px solid #3b82f6; }
+        .podium-2 { height: 130px; background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%); border-top: 4px solid #94a3b8; }
+        .podium-3 { height: 100px; background: linear-gradient(180deg, #f1f5f9 0%, #cbd5e1 100%); border-top: 4px solid #64748b; }
+
+        /* Code Editor Textarea overrides */
+        .code-editor {
+            background-color: #0f172a; /* slate-900 */
+            color: #e2e8f0; /* slate-200 */
+            caret-color: #3b82f6;
+        }
+        .code-editor:focus {
+            outline: none;
+            box-shadow: inset 0 0 0 2px #3b82f6;
+        }
+
+        /* Prompt Editor Textarea overrides */
+        .prompt-editor {
+            background-color: #ffffff;
+            color: #334155;
+            border: 1px solid #e2e8f0;
+            caret-color: #3b82f6;
+        }
+        .prompt-editor:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        .spinner {
+            border: 3px solid rgba(37, 99, 235, 0.1);
+            border-left-color: #2563eb;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .fade-in { animation: fadeIn 0.4s ease-out forwards; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .nav-tab-active {
+            border-bottom: 2px solid #2563eb;
+            color: #2563eb;
+            font-weight: 600;
+        }
+        .nav-tab-inactive {
+            border-bottom: 2px solid transparent;
+            color: #64748b;
+        }
+        .nav-tab-inactive:hover {
+            color: #334155;
+            border-bottom: 2px solid #cbd5e1;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased">
+
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded bg-blue-600 flex items-center justify-center text-white font-bold">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                </div>
+                <h1 class="text-xl font-bold text-slate-800 tracking-tight">Dev Arena</h1>
+            </div>
+
+            <nav class="flex h-full gap-6">
+                <button onclick="switchTab('prompt')" id="tab-prompt" class="nav-tab-active h-full px-2 flex items-center text-sm transition-all">
+                    Prompt Arena
+                </button>
+                <button onclick="switchTab('logic')" id="tab-logic" class="nav-tab-inactive h-full px-2 flex items-center text-sm transition-all">
+                    Logic Arena
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <main class="flex-grow w-full max-w-7xl mx-auto px-4 py-8 flex flex-col items-center">
+
+        <!-- View: Prompt Arena -->
+        <div id="view-prompt" class="w-full space-y-6 fade-in">
+            <div class="text-center mb-6">
+                <h2 class="text-2xl font-bold text-slate-800 mb-2">Engenharia de Prompts</h2>
+                <p class="text-slate-500 max-w-2xl mx-auto text-sm">Escreva a instrução mais precisa. O Gemini avaliará clareza, formatação e capacidade de mitigar alucinações.</p>
+            </div>
+
+            <div class="glass-card rounded-xl overflow-hidden">
+                <div class="bg-slate-50 border-b border-slate-200 px-6 py-3 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                        <h3 class="font-semibold text-slate-700">Objetivo Atual</h3>
+                    </div>
+                    <button onclick="cycleChallenge('prompt')" class="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                        Trocar Desafio
+                    </button>
+                </div>
+                <div class="p-6">
+                    <p id="prompt-challenge-text" class="text-lg text-slate-800 font-medium"></p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                <div class="lg:col-span-3 flex flex-col space-y-4">
+                    <div class="flex flex-col h-full relative">
+                        <textarea id="prompt-input" class="prompt-editor w-full flex-grow min-h-[300px] p-5 rounded-xl shadow-sm resize-y text-base" placeholder="Escreva seu prompt detalhado aqui..."></textarea>
+                    </div>
+
+                    <div class="flex justify-between items-center mt-2">
+                        <div id="prompt-error-msg" class="text-red-500 text-sm font-medium hidden">Escreva algum prompt antes de enviar.</div>
+                        <div class="ml-auto">
+                            <button onclick="submitPrompt()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-6 rounded-lg transition-all shadow hover:shadow-md flex items-center gap-2 active:scale-95">
+                                <span>Submeter Prompt</span>
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <div class="glass-card rounded-xl p-5">
+                        <h3 class="font-semibold text-slate-800 text-sm mb-4 border-b border-slate-100 pb-2">Competidores</h3>
+                        <div class="space-y-3" id="prompt-competitors-list"></div>
+                        <div class="mt-6">
+                            <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Critérios de Avaliação</h4>
+                            <ul class="space-y-2 text-sm text-slate-600">
+                                <li class="flex items-center gap-2"><svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Clareza & Precisão</li>
+                                <li class="flex items-center gap-2"><svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Definição de Formato</li>
+                                <li class="flex items-center gap-2"><svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Prevenção de Alucinações</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- View: Logic Arena -->
+        <div id="view-logic" class="w-full space-y-6 hidden fade-in">
+            <div class="text-center mb-6">
+                <h2 class="text-2xl font-bold text-slate-800 mb-2">Batalha de Algoritmos</h2>
+                <p class="text-slate-500 max-w-2xl mx-auto text-sm">Escreva a solução mais eficiente e limpa. O Tech Lead virtual avaliará Complexidade (Big-O) e Correção.</p>
+            </div>
+
+            <div class="glass-card rounded-xl overflow-hidden">
+                <div class="bg-slate-50 border-b border-slate-200 px-6 py-3 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+                        <h3 class="font-semibold text-slate-700">Objetivo Atual</h3>
+                    </div>
+                    <button onclick="cycleChallenge('logic')" class="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                        Trocar Desafio
+                    </button>
+                </div>
+                <div class="p-6">
+                    <p id="logic-challenge-text" class="text-lg text-slate-800 font-medium"></p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                <div class="lg:col-span-3 flex flex-col space-y-4">
+                    <div class="glass-card rounded-xl p-0 flex flex-col overflow-hidden h-full">
+                        <div class="bg-slate-800 px-4 py-2 flex items-center justify-between border-b border-slate-700">
+                            <span class="text-slate-300 text-sm font-medium flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+                                solution.code
+                            </span>
+                        </div>
+                        <textarea id="logic-input" class="code-editor code-font w-full flex-grow min-h-[350px] p-4 text-sm resize-y" placeholder="// Escreva sua solução aqui..."></textarea>
+                    </div>
+
+                    <div class="flex justify-between items-center mt-2">
+                        <div id="logic-error-msg" class="text-red-500 text-sm font-medium hidden">Por favor, escreva algum código antes de enviar.</div>
+                        <div class="ml-auto">
+                            <button onclick="submitLogic()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-6 rounded-lg transition-all shadow hover:shadow-md flex items-center gap-2 active:scale-95">
+                                <span>Submeter Código</span>
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <div class="glass-card rounded-xl p-5">
+                        <h3 class="font-semibold text-slate-800 text-sm mb-4 border-b border-slate-100 pb-2">Competidores</h3>
+                        <div class="space-y-3" id="logic-competitors-list"></div>
+                        <div class="mt-6">
+                            <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Critérios (Tech Lead)</h4>
+                            <ul class="space-y-2 text-sm text-slate-600">
+                                <li class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Correção</li>
+                                <li class="flex items-center gap-2"><svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Complexidade (Tempo/Espaço)</li>
+                                <li class="flex items-center gap-2"><svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Eficiência & Clean Code</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- View: Evaluating / Loading -->
+        <div id="view-evaluating" class="w-full max-w-2xl text-center space-y-8 hidden py-16">
+            <div class="flex justify-center mb-6">
+                <div class="relative">
+                    <div class="w-16 h-16 border-4 border-slate-100 rounded-full"></div>
+                    <div class="w-16 h-16 border-4 border-blue-600 rounded-full border-t-transparent animate-spin absolute top-0 left-0"></div>
+                </div>
+            </div>
+            <div>
+                <h2 class="text-2xl font-bold text-slate-800 mb-2">Avaliando Submissões...</h2>
+                <p class="text-slate-500" id="evaluating-text">A Inteligência Artificial está analisando as propostas em tempo real.</p>
+            </div>
+        </div>
+
+        <!-- View: Results -->
+        <div id="view-results" class="w-full max-w-5xl hidden space-y-8 fade-in pb-12">
+            <div class="text-center mb-6 flex flex-col sm:flex-row justify-between items-center gap-4">
+                <div class="text-left">
+                    <h2 class="text-2xl font-bold text-slate-800 mb-1">Resultado da Avaliação</h2>
+                    <p class="text-slate-500 text-sm">Ranking definido baseado nos critérios estabelecidos.</p>
+                </div>
+                <button onclick="resetArena()" class="bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-medium py-2 px-5 rounded-lg transition-all shadow-sm text-sm">
+                    Voltar para a Arena
+                </button>
+            </div>
+
+            <!-- Podium -->
+            <div class="glass-card rounded-2xl p-6 sm:p-10 mb-8 flex items-end justify-center gap-3 sm:gap-8 pt-16">
+                <!-- 2nd Place -->
+                <div class="flex flex-col items-center flex-1 max-w-[160px]" id="podium-2">
+                    <div class="text-center mb-3">
+                        <div class="font-semibold text-slate-600 text-sm truncate w-full px-1" id="name-2">Bot</div>
+                        <div class="text-xl font-bold text-slate-400" id="score-2">0</div>
+                    </div>
+                    <div class="w-full podium-2 rounded-t-lg flex justify-center pt-3 relative border-x border-slate-200">
+                        <span class="absolute -top-4 bg-slate-100 text-slate-500 font-bold rounded-full w-7 h-7 flex items-center justify-center shadow-sm border border-slate-300 text-sm">2</span>
+                    </div>
+                </div>
+
+                <!-- 1st Place -->
+                <div class="flex flex-col items-center flex-1 max-w-[180px] z-10" id="podium-1">
+                    <div class="text-center mb-3 transform -translate-y-2">
+                        <div class="font-bold text-blue-700 truncate w-full px-1" id="name-1">Você</div>
+                        <div class="text-3xl font-black text-blue-600" id="score-1">0</div>
+                    </div>
+                    <div class="w-full podium-1 rounded-t-lg flex justify-center pt-3 relative shadow-md border-x border-blue-200">
+                        <span class="absolute -top-5 bg-blue-500 text-white font-bold rounded-full w-9 h-9 flex items-center justify-center shadow-md border-2 border-white text-sm">1</span>
+                    </div>
+                </div>
+
+                <!-- 3rd Place -->
+                <div class="flex flex-col items-center flex-1 max-w-[160px]" id="podium-3">
+                    <div class="text-center mb-3">
+                        <div class="font-semibold text-slate-600 text-sm truncate w-full px-1" id="name-3">Bot</div>
+                        <div class="text-xl font-bold text-slate-400" id="score-3">0</div>
+                    </div>
+                    <div class="w-full podium-3 rounded-t-lg flex justify-center pt-3 relative border-x border-slate-200">
+                        <span class="absolute -top-4 bg-slate-100 text-slate-500 font-bold rounded-full w-7 h-7 flex items-center justify-center shadow-sm border border-slate-300 text-sm">3</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-card rounded-xl overflow-hidden">
+                <div class="bg-slate-50 border-b border-slate-200 px-6 py-4">
+                    <h3 class="font-semibold text-slate-800">Feedback Detalhado</h3>
+                </div>
+                <div class="divide-y divide-slate-100" id="detailed-results">
+                    <!-- Injected via JS -->
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        // --- State and Data ---
+        let currentTab = 'prompt'; // 'prompt' or 'logic'
+        let currentPromptChallengeIndex = 0;
+        let currentLogicChallengeIndex = 0;
+
+        const PROMPT_CHALLENGES = [
+            {
+                id: 1,
+                task: "Desenvolva um prompt detalhado para gerar uma apresentação instrutiva de 20 slides sobre IA e chatbots para alunos do ensino médio.",
+                bots: [
+                    { id: "bot_alpha", name: "Bot Alpha", input: "Faça uma apresentação sobre inteligência artificial e chatbots. Precisa ter 20 slides para adolescentes." },
+                    { id: "bot_lumxx", name: "LumxxBot", input: "Atue como um professor especialista em tecnologia. Crie um esboço para uma apresentação de 20 slides focada em alunos do ensino médio sobre 'IA e Chatbots'. O formato deve ser estruturado em Markdown, contendo para cada slide: Título, Tópicos principais (bullet points) e uma sugestão de imagem/gráfico visual. Cubra a história da IA, como LLMs funcionam, exemplos de uso e questões éticas." }
+                ]
+            },
+            {
+                id: 2,
+                task: "Crie um prompt para extrair informações estruturadas (Nome, Idade, Profissão, e Doenças Prévias) de um texto médico desestruturado longo e formatar como JSON estrito.",
+                bots: [
+                    { id: "bot_alpha", name: "Bot Alpha", input: "Leia o texto abaixo e me dê um JSON com nome, idade, profissão e doenças. Texto: [TEXTO AQUI]" },
+                    { id: "bot_lumxx", name: "LumxxBot", input: "Sua tarefa é atuar como um extrator de dados de prontuários médicos. Analise o texto fornecido pelo usuário e extraia as seguintes entidades: Nome (string), Idade (inteiro), Profissão (string), Doencas_Previas (array de strings). Retorne ESTritamente um objeto JSON válido, sem texto adicional de introdução ou conclusão. Se um dado não estiver presente, use null. Exemplo de saída: { \"Nome\": \"João\", \"Idade\": 45... }" }
+                ]
+            }
+        ];
+
+        const LOGIC_CHALLENGES = [
+            {
+                id: 1,
+                task: "Escreva um programa em C que utilize técnicas de currying ou aplicação parcial para alocação dinâmica de memória de uma matriz 2D.",
+                bots: [
+                    { id: "bot_tech", name: "TechBot", input: "int main() {\n  // Nao entendi currying em C, vou alocar normal\n  int** matriz = malloc(100);\n  return 0;\n}" },
+                    { id: "bot_algo", name: "AlgoExpert", input: "// Simulacao de aplicacao parcial via ponteiros/structs\ntypedef int** (*MatrixAllocPartial)(int rows);\n\nint** alloc_cols(int rows, int cols) {\n  int** m = malloc(rows * sizeof(int*));\n  for(int i=0; i<rows; i++) m[i] = malloc(cols * sizeof(int));\n  return m;\n}\n// O currying real em C exige uso de closures gcc ou structs de estado." }
+                ]
+            },
+            {
+                id: 2,
+                task: "Implemente um algoritmo de busca em grafos para encontrar o caminho mais curto, considerando um grafo não direcionado não ponderado.",
+                bots: [
+                    { id: "bot_tech", name: "TechBot", input: "function findShortestPath(graph, start, target) {\n  // Tentando ir pelo primeiro caminho sempre (DFS errado para menor caminho)\n  let current = start;\n  let path = [current];\n  while(current !== target && graph[current]) {\n    current = graph[current][0];\n    path.push(current);\n  }\n  return path;\n}" },
+                    { id: "bot_algo", name: "AlgoExpert", input: "function bfsShortestPath(graph, start, end) {\n  const queue = [[start]];\n  const visited = new Set([start]);\n\n  while (queue.length > 0) {\n    const path = queue.shift();\n    const node = path[path.length - 1];\n\n    if (node === end) return path;\n\n    for (const neighbor of graph[node] || []) {\n      if (!visited.has(neighbor)) {\n        visited.add(neighbor);\n        queue.push([...path, neighbor]);\n      }\n    }\n  }\n  return null;\n}" }
+                ]
+            }
+        ];
+
+        // --- DOM Elements ---
+        const viewPrompt = document.getElementById('view-prompt');
+        const viewLogic = document.getElementById('view-logic');
+        const viewEvaluating = document.getElementById('view-evaluating');
+        const viewResults = document.getElementById('view-results');
+        const evalText = document.getElementById('evaluating-text');
+
+        // --- Core UI Logic ---
+        function init() {
+            loadChallenge('prompt', currentPromptChallengeIndex);
+            loadChallenge('logic', currentLogicChallengeIndex);
+        }
+
+        function switchTab(tabId) {
+            currentTab = tabId;
+
+            // Update Nav Styles
+            document.getElementById('tab-prompt').className = tabId === 'prompt' ? 'nav-tab-active h-full px-2 flex items-center text-sm transition-all' : 'nav-tab-inactive h-full px-2 flex items-center text-sm transition-all';
+            document.getElementById('tab-logic').className = tabId === 'logic' ? 'nav-tab-active h-full px-2 flex items-center text-sm transition-all' : 'nav-tab-inactive h-full px-2 flex items-center text-sm transition-all';
+
+            // Reset Views
+            viewEvaluating.classList.add('hidden');
+            viewResults.classList.add('hidden');
+
+            if (tabId === 'prompt') {
+                viewLogic.classList.add('hidden');
+                viewPrompt.classList.remove('hidden');
+            } else {
+                viewPrompt.classList.add('hidden');
+                viewLogic.classList.remove('hidden');
+            }
+        }
+
+        function loadChallenge(type, index) {
+            if (type === 'prompt') {
+                const session = PROMPT_CHALLENGES[index];
+                document.getElementById('prompt-challenge-text').textContent = session.task;
+                document.getElementById('prompt-input').value = '';
+                renderBots('prompt-competitors-list', session.bots);
+            } else {
+                const session = LOGIC_CHALLENGES[index];
+                document.getElementById('logic-challenge-text').textContent = session.task;
+                document.getElementById('logic-input').value = '';
+                renderBots('logic-competitors-list', session.bots);
+            }
+        }
+
+        function renderBots(containerId, bots) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            bots.forEach((bot) => {
+                container.innerHTML += `
+                    <div class="flex items-center justify-between bg-white border border-slate-100 p-2.5 rounded-lg shadow-sm">
+                        <div class="flex items-center gap-3">
+                            <div class="w-7 h-7 rounded bg-slate-100 border border-slate-200 flex items-center justify-center font-bold text-slate-500 text-xs">
+                                ${bot.name.charAt(0)}
+                            </div>
+                            <span class="font-medium text-slate-600 text-sm">${bot.name}</span>
+                        </div>
+                        <span class="text-[10px] uppercase font-bold text-emerald-500 bg-emerald-50 px-2 py-1 rounded border border-emerald-100">Ready</span>
+                    </div>
+                `;
+            });
+        }
+
+        function cycleChallenge(type) {
+            if (type === 'prompt') {
+                currentPromptChallengeIndex = (currentPromptChallengeIndex + 1) % PROMPT_CHALLENGES.length;
+                loadChallenge('prompt', currentPromptChallengeIndex);
+            } else {
+                currentLogicChallengeIndex = (currentLogicChallengeIndex + 1) % LOGIC_CHALLENGES.length;
+                loadChallenge('logic', currentLogicChallengeIndex);
+            }
+        }
+
+        // --- Submission Logic ---
+        async function submitPrompt() {
+            const input = document.getElementById('prompt-input');
+            const errorMsg = document.getElementById('prompt-error-msg');
+            const val = input.value.trim();
+
+            if (!val) {
+                showError(input, errorMsg);
+                return;
+            }
+
+            const session = PROMPT_CHALLENGES[currentPromptChallengeIndex];
+            const submissions = [
+                { id: "user", nome: "Você (Engenheiro de Prompts)", input: val },
+                ...session.bots.map(b => ({ id: b.id, nome: b.name, input: b.input }))
+            ];
+
+            startEvaluation("O Gemini (Juiz) está avaliando a engenharia dos prompts...");
+            await processEvaluation(session.task, submissions, 'prompt');
+        }
+
+        async function submitLogic() {
+            const input = document.getElementById('logic-input');
+            const errorMsg = document.getElementById('logic-error-msg');
+            const val = input.value.trim();
+
+            if (!val) {
+                showError(input, errorMsg);
+                return;
+            }
+
+            const session = LOGIC_CHALLENGES[currentLogicChallengeIndex];
+            const submissions = [
+                { id: "user", nome: "Você (Desenvolvedor)", input: val },
+                ...session.bots.map(b => ({ id: b.id, nome: b.name, input: b.input }))
+            ];
+
+            startEvaluation("O Tech Lead virtual está executando análise estática e Big-O...");
+            await processEvaluation(session.task, submissions, 'logic');
+        }
+
+        function showError(inputEl, errorEl) {
+            errorEl.classList.remove('hidden');
+            inputEl.style.borderColor = '#ef4444';
+            setTimeout(() => {
+                errorEl.classList.add('hidden');
+                inputEl.style.borderColor = '#e2e8f0';
+            }, 3000);
+        }
+
+        function startEvaluation(msg) {
+            viewPrompt.classList.add('hidden');
+            viewLogic.classList.add('hidden');
+            evalText.textContent = msg;
+            viewEvaluating.classList.remove('hidden');
+        }
+
+        async function processEvaluation(task, submissions, type) {
+            try {
+                const evaluationResult = await callEvaluationAPI(task, submissions, type);
+                renderResults(evaluationResult, submissions, type);
+            } catch (error) {
+                console.error("API Error:", error);
+                resetArena();
+                const targetView = type === 'prompt' ? document.getElementById('prompt-challenge-text') : document.getElementById('logic-challenge-text');
+                const origText = targetView.textContent;
+                targetView.innerHTML = `<span class="text-red-500">Erro na conexão com a IA Avaliadora. Tente novamente.</span>`;
+                setTimeout(() => targetView.textContent = origText, 3000);
+            }
+        }
+
+        // --- Chamada ao backend seguro (Vercel Function) em vez do Gemini direto ---
+        async function callEvaluationAPI(task, submissions, type) {
+            const response = await fetch('/api/evaluate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task, submissions, type })
+            });
+
+            if (!response.ok) throw new Error("API failed");
+
+            return await response.json();
+        }
+
+        // --- Rendering Results View ---
+        function renderResults(evaluation, originalSubmissions, type) {
+            let ranking = evaluation.ranking.map(item => {
+                const original = originalSubmissions.find(p => p.id === item.id);
+                return {
+                    ...item,
+                    nome: original ? original.nome : 'Desconhecido',
+                    inputOriginal: original ? original.input : '',
+                    isUser: item.id === "user"
+                };
+            });
+            ranking.sort((a, b) => b.nota - a.nota);
+
+            viewEvaluating.classList.add('hidden');
+            viewResults.classList.remove('hidden');
+
+            const positions = [
+                { rank: 1, element: '1' },
+                { rank: 2, element: '2' },
+                { rank: 3, element: '3' }
+            ];
+
+            positions.forEach((pos, idx) => {
+                const data = ranking[idx];
+                const nameEl = document.getElementById(`name-${pos.element}`);
+                const scoreEl = document.getElementById(`score-${pos.element}`);
+
+                if (data) {
+                    nameEl.textContent = data.nome;
+                    scoreEl.textContent = data.nota;
+
+                    if (data.isUser && pos.rank !== 1) {
+                        nameEl.classList.add('text-blue-600');
+                    }
+                } else {
+                    nameEl.textContent = "-";
+                    scoreEl.textContent = "0";
+                }
+            });
+
+            const listEl = document.getElementById('detailed-results');
+            listEl.innerHTML = '';
+
+            ranking.forEach((item, index) => {
+                const isUserRow = item.isUser ? 'bg-blue-50/30' : 'bg-white';
+                const rankColors = index === 0 ? 'text-blue-600' : 'text-slate-500';
+
+                const safeInput = item.inputOriginal.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                const codeBlockClass = type === 'logic' ? 'code-font bg-[#0f172a] text-slate-300' : 'bg-slate-50 text-slate-700 border border-slate-200';
+
+                listEl.innerHTML += `
+                    <div class="p-5 sm:p-6 ${isUserRow} border-l-4 ${item.isUser ? 'border-l-blue-500' : 'border-l-transparent'}">
+                        <div class="flex flex-col sm:flex-row gap-4 sm:gap-6 items-start">
+
+                            <div class="flex-shrink-0 flex flex-col items-center justify-center bg-white border border-slate-200 rounded-lg w-16 h-16 shadow-sm">
+                                <span class="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-0.5">Rank ${index + 1}</span>
+                                <span class="text-xl font-black ${rankColors}">${item.nota}</span>
+                            </div>
+
+                            <div class="flex-grow min-w-0 w-full">
+                                <div class="flex items-center gap-3 mb-2">
+                                    <h4 class="font-bold text-base ${item.isUser ? 'text-blue-700' : 'text-slate-700'}">${item.nome}</h4>
+                                    ${item.isUser ? `<span class="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-blue-100 text-blue-700">Sua Submissão</span>` : ''}
+                                </div>
+
+                                <div class="rounded p-3 mb-3 overflow-x-auto ${codeBlockClass}">
+                                    <pre class="text-xs leading-relaxed max-h-32 overflow-y-auto whitespace-pre-wrap"><code>${safeInput}</code></pre>
+                                </div>
+
+                                <div class="flex items-start gap-2 text-sm bg-white p-3 border border-slate-100 rounded shadow-sm">
+                                    <svg class="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+                                    <p class="text-slate-600 leading-relaxed">
+                                        <strong class="text-slate-800 font-semibold">Feedback:</strong> ${item.justificativa}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        function resetArena() {
+            viewResults.classList.add('hidden');
+            viewEvaluating.classList.add('hidden');
+
+            if (currentTab === 'prompt') {
+                viewPrompt.classList.remove('hidden');
+            } else {
+                viewLogic.classList.remove('hidden');
+            }
+        }
+
+        // --- Start ---
+        init();
+    </script>
+</body>
+</html>
