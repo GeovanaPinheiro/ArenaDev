@@ -14,8 +14,8 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Chave da API não configurada no servidor' });
   }
 
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-
+const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
+  
   let systemPrompt = '';
   if (type === 'prompt') {
     systemPrompt = `Você é um juiz especialista em Engenharia de Prompts.
