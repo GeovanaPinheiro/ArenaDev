@@ -4,7 +4,6 @@ export default async function handler(req, res) {
   }
 
   let body = req.body;
-
   try {
     if (typeof body === 'string') {
       body = JSON.parse(body);
@@ -23,15 +22,13 @@ export default async function handler(req, res) {
 
   const { task, submissions, type } = body || {};
   const missingFields = [];
-
+  
   if (typeof task !== 'string' || !task.trim()) {
     missingFields.push('task');
   }
-
   if (!Array.isArray(submissions) || submissions.length === 0) {
     missingFields.push('submissions');
   }
-
   if (!['prompt', 'logic'].includes(type)) {
     missingFields.push('type');
   }
@@ -41,7 +38,6 @@ export default async function handler(req, res) {
       'Requisição de avaliação inválida; campos ausentes ou inválidos:',
       missingFields
     );
-
     return res.status(400).json({
       error: `Requisição inválida. Verifique os campos: ${missingFields.join(', ')}.`,
       code: 'INVALID_REQUEST',
@@ -50,31 +46,18 @@ export default async function handler(req, res) {
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
-
   if (!apiKey) {
     return res.status(500).json({
       error: 'Chave da API não configurada no servidor'
     });
   }
 
-  const models = ['gemini-3.8-flash', 'gemini-flash-lite-latest'];
+  // Utilizando os modelos oficiais do Gemini mais recentes e estáveis
+  const models = ['gemini-1.5-flash', 'gemini-1.5-pro'];
 
   const systemPrompt = type === 'prompt'
-    ? `Você é um juiz especialista em Engenharia de Prompts.
-Receberá um desafio e uma lista de prompts submetidos.
-Avalie cada um considerando:
-1. Precisão e Clareza: restringe alucinações?
-2. Técnicas: usa personas, few-shot ou define formato?
-Atribua uma nota de 0 a 100 para cada um.
-Retorne somente o JSON solicitado.`
-    : `Você é um Tech Lead Sênior avaliando código.
-Receberá um desafio algorítmico e soluções de competidores.
-Avalie rigorosamente:
-1. Correção: resolve o problema?
-2. Complexidade de tempo e espaço.
-3. Clean Code.
-Atribua uma nota de 0 a 100 para cada um.
-Retorne somente o JSON solicitado.`;
+    ? `Você é um juiz especialista em Engenharia de Prompts. Receberá um desafio e uma lista de prompts submetidos. Avalie cada um considerando: 1. Precisão e Clareza: restringe alucinações? 2. Técnicas: usa personas, few-shot ou define formato? Atribua uma nota de 0 a 100 para cada um. Retorne somente o JSON solicitado.`
+    : `Você é um Tech Lead Sênior avaliando código. Receberá um desafio algorítmico e soluções de competidores. Avalie rigorosamente: 1. Correção: resolve o problema? 2. Complexidade de tempo e espaço 3. Clean Code. Atribua uma nota de 0 a 100 para cada um. Retorne somente o JSON solicitado.`;
 
   const rankingSchema = {
     type: 'object',
@@ -98,12 +81,7 @@ Retorne somente o JSON solicitado.`;
     required: ['ranking']
   };
 
-  const input = `${systemPrompt}
-
-Avalie todas as submissões para o desafio informado. Preserve os IDs recebidos.
-
-Dados:
-${JSON.stringify({ desafio: task, submissoes: submissions })}`;
+  const input = `${systemPrompt} Avalie todas as submissões para o desafio informado. Preserve os IDs recebidos. Dados: ${JSON.stringify({ desafio: task, submissoes: submissions })}`;
 
   try {
     let geminiResponse;
@@ -111,21 +89,17 @@ ${JSON.stringify({ desafio: task, submissoes: submissions })}`;
 
     for (const model of models) {
       geminiResponse = await fetch(
-        'https://generativelanguage.googleapis.com/v1beta/interactions',
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': apiKey
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            model,
-            input,
-            store: false,
-            response_format: {
-              type: 'text',
-              mime_type: 'application/json',
-              schema: rankingSchema
+            contents: [{ parts: [{ text: input }] }],
+            generationConfig: {
+              responseMimeType: 'application/json',
+              responseSchema: rankingSchema
             }
           })
         }
@@ -154,7 +128,6 @@ ${JSON.stringify({ desafio: task, submissoes: submissions })}`;
       }
 
       let providerMessage = 'Falha ao consultar o Gemini.';
-
       try {
         const providerError = JSON.parse(lastErrorText);
         providerMessage = providerError.error?.message || providerMessage;
@@ -179,20 +152,15 @@ ${JSON.stringify({ desafio: task, submissoes: submissions })}`;
     }
 
     const result = await geminiResponse.json();
-    const responseText = result.output_text
-      || result.steps
-        ?.filter(step => step.type === 'model_output')
-        .flatMap(step => step.content || [])
-        .filter(content => content.type === 'text')
-        .map(content => content.text)
-        .join('');
+    
+    // Extração correta do texto da resposta estruturada da API do Gemini
+    const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!responseText) {
       console.error(
         'Resposta do Gemini sem texto de saída:',
         JSON.stringify(result)
       );
-
       return res.status(502).json({
         error: 'O Gemini retornou uma resposta vazia ou inválida.',
         code: 'EMPTY_MODEL_RESPONSE'
@@ -201,10 +169,11 @@ ${JSON.stringify({ desafio: task, submissoes: submissions })}`;
 
     const parsed = JSON.parse(responseText);
     return res.status(200).json(parsed);
+
   } catch (error) {
     console.error('Erro no handler:', error);
     return res.status(500).json({
-      error: 'Erro interno ao avaliar submissões'
+      error: 'Erro interno ao avaliar submissões.'
     });
   }
 }
