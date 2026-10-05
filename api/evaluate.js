@@ -3,9 +3,9 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Método não permitido' });
   }
 
-  const { task, submission, type } = req.body;
+  const { task, submissions, type } = req.body;
 
-  if (!task || !submission || !type) {
+  if (!task || !submissions || !type) {
     return res.status(400).json({ error: 'Dados incompletos na requisição' });
   }
 
@@ -14,89 +14,116 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Chave da API não configurada no servidor' });
   }
 
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
+  const models = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 
   let systemPrompt = '';
   if (type === 'prompt') {
     systemPrompt = `Você é um juiz especialista em Engenharia de Prompts.
-Receberá um desafio e o prompt submetido por um participante.
-Avalie considerando:
+Receberá um desafio e uma lista de prompts submetidos.
+Avalie cada um considerando:
 1. Precisão e Clareza: Restringe alucinações?
 2. Técnicas: Usa personas, few-shot, ou define formato?
-Atribua uma nota de 0 a 100.
+Atribua uma nota de 0 a 100 para cada um.
 Retorne um JSON estrito validando o schema solicitado.`;
   } else {
     systemPrompt = `Você é um Tech Lead Sênior avaliando código.
-Receberá um desafio algorítmico e a solução submetida por um participante.
+Receberá um desafio algorítmico e soluções de competidores.
 Avalie rigorosamente:
 1. Correção (resolve o problema?).
 2. Complexidade de Tempo/Espaço (Eficiência).
 3. Clean Code.
-Atribua uma nota de 0 a 100.
+Atribua uma nota de 0 a 100 para cada um.
 Retorne um JSON estrito validando o schema solicitado.`;
   }
 
   const payload = {
-    contents: [{ parts: [{ text: JSON.stringify({ desafio: task, submissao: submission }) }] }],
+    contents: [
+      {
+        parts: [
+          { text: JSON.stringify({ desafio: task, submissoes: submissions }) }
+        ]
+      }
+    ],
     systemInstruction: { parts: [{ text: systemPrompt }] },
     generationConfig: {
       responseMimeType: 'application/json',
       responseSchema: {
         type: 'OBJECT',
         properties: {
-          nota: { type: 'INTEGER' },
-          justificativa: { type: 'STRING', description: 'Avaliação técnica direta, 1 a 2 frases.' }
+          ranking: {
+            type: 'ARRAY',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                id: { type: 'STRING' },
+                nota: { type: 'INTEGER' },
+                justificativa: {
+                  type: 'STRING',
+                  description: 'Avaliação técnica direta, 1 a 2 frases.'
+                }
+              },
+              required: ['id', 'nota', 'justificativa']
+            }
+          }
         },
-        required: ['nota', 'justificativa']
+        required: ['ranking']
       }
     }
   };
 
-  const MAX_ATTEMPTS = 3;
-  const RETRY_DELAY_MS = 1500; // tempo entre tentativas, aumenta a cada retry
+  try {
+    let geminiResponse;
+    let lastErrorText = '';
 
-  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    for (const model of models) {
+      const apiUrl =
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    try {
-      const geminiResponse = await fetch(apiUrl, {
+      geminiResponse = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
 
-      if (!geminiResponse.ok) {
-        const errText = await geminiResponse.text();
-        const isOverloaded = geminiResponse.status === 503 || geminiResponse.status === 429;
+      if (geminiResponse.ok) break;
 
-        console.error(`Erro Gemini (tentativa ${attempt}/${MAX_ATTEMPTS}):`, errText);
+      lastErrorText = await geminiResponse.text();
+      console.error(`Erro Gemini (${model}):`, lastErrorText);
 
-        // Se o modelo está sobrecarregado (503) ou com rate limit (429) e ainda temos tentativas, espera e tenta de novo
-        if (isOverloaded && attempt < MAX_ATTEMPTS) {
-          await sleep(RETRY_DELAY_MS * attempt); // backoff crescente: 1.5s, depois 3s
-          continue;
+      const isTemporaryError = [429, 500, 502, 503, 504].includes(
+        geminiResponse.status
+      );
+
+      if (!isTemporaryError || model === models[models.length - 1]) {
+        if ([429, 503].includes(geminiResponse.status)) {
+          return res.status(503).json({
+            error: 'A IA avaliadora está temporariamente indisponível. Aguarde alguns segundos e tente novamente.',
+            code: 'AI_UNAVAILABLE'
+          });
         }
 
         return res.status(502).json({
-          error: isOverloaded
-            ? 'O modelo de IA está sobrecarregado no momento. Tente submeter novamente em alguns segundos.'
-            : 'Falha ao consultar o Gemini'
+          error: 'Falha ao consultar o Gemini'
         });
       }
-
-      const result = await geminiResponse.json();
-      const parsed = JSON.parse(result.candidates[0].content.parts[0].text);
-
-      return res.status(200).json(parsed);
-    } catch (error) {
-      console.error(`Erro no handler (tentativa ${attempt}/${MAX_ATTEMPTS}):`, error);
-
-      if (attempt < MAX_ATTEMPTS) {
-        await sleep(RETRY_DELAY_MS * attempt);
-        continue;
-      }
-
-      return res.status(500).json({ error: 'Erro interno ao avaliar submissão' });
     }
+
+    if (!geminiResponse || !geminiResponse.ok) {
+      console.error('Todos os modelos Gemini falharam:', lastErrorText);
+      return res.status(503).json({
+        error: 'A IA avaliadora está temporariamente indisponível. Aguarde alguns segundos e tente novamente.',
+        code: 'AI_UNAVAILABLE'
+      });
+    }
+
+    const result = await geminiResponse.json();
+    const parsed = JSON.parse(result.candidates[0].content.parts[0].text);
+
+    return res.status(200).json(parsed);
+  } catch (error) {
+    console.error('Erro no handler:', error);
+    return res.status(500).json({
+      error: 'Erro interno ao avaliar submissões'
+    });
   }
 }
