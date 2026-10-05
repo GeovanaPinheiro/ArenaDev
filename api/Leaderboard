@@ -1,70 +1,128 @@
-// Aceita tanto o padrão antigo (KV_REST_API_*) quanto o novo (UPSTASH_REDIS_REST_*),
-// pois depende de como a integração injetou as variáveis no seu projeto Vercel.
-const REDIS_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-const REDIS_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+const LEADERBOARD_KEY = 'dev-arena:leaderboard';
+const PLAYER_NAMES_KEY = 'dev-arena:player-names';
 
-const LIST_KEY = 'dev_arena_leaderboard';
-const MAX_ENTRIES = 500; // limite de segurança para não crescer indefinidamente
+function getRedisConfig() {
+  const url =
+    process.env.UPSTASH_REDIS_REST_URL ||
+    process.env.KV_REST_API_URL;
 
-async function redisCommand(command) {
-  const response = await fetch(REDIS_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${REDIS_TOKEN}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(command)
-  });
+  const token =
+    process.env.UPSTASH_REDIS_REST_TOKEN ||
+    process.env.KV_REST_API_TOKEN;
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Redis error: ${text}`);
+  if (!url || !token) {
+    return null;
   }
 
-  const data = await response.json();
-  return data.result;
+  return {
+    url: url.replace(/\/+$/, ''),
+    token
+  };
+}
+
+async function executePipeline(config, commands) {
+  const response = await fetch(`${config.url}/pipeline`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(commands)
+  });
+
+  const results = await response.json().catch(() => null);
+
+  if (!response.ok || !Array.isArray(results)) {
+    console.error('Resposta inválida do Upstash:', response.status);
+    throw new Error('Falha ao consultar o banco do placar.');
+  }
+
+  const failedCommand = results.find(result => result.error);
+  if (failedCommand) {
+    console.error('Erro em comando do placar:', failedCommand.error);
+    throw new Error('Falha ao executar uma operação no placar.');
+  }
+
+  return results.map(result => result.result);
 }
 
 export default async function handler(req, res) {
-  if (!REDIS_URL || !REDIS_TOKEN) {
-    return res.status(500).json({
-      error: 'Banco de dados não configurado. Configure a integração Redis (Upstash) no Vercel.'
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    return res.status(405).json({ error: 'Método não permitido.' });
+  }
+
+  const config = getRedisConfig();
+
+  if (!config) {
+    return res.status(503).json({
+      error: 'Placar não configurado. Configure as variáveis do Upstash Redis no Vercel.'
     });
   }
 
   try {
     if (req.method === 'GET') {
-      const rawEntries = await redisCommand(['LRANGE', LIST_KEY, '0', '-1']);
-      const entries = (rawEntries || []).map((e) => JSON.parse(e));
-      entries.sort((a, b) => b.nota - a.nota);
-      return res.status(200).json({ leaderboard: entries });
-    }
+      const [scores] = await executePipeline(config, [
+        ['ZREVRANGE', LEADERBOARD_KEY, '0', '9', 'WITHSCORES']
+      ]);
 
-    if (req.method === 'POST') {
-      const { name, nota, type, task, justificativa } = req.body;
-
-      if (!name || typeof nota !== 'number' || !type) {
-        return res.status(400).json({ error: 'Dados incompletos para registrar no placar' });
+      if (!Array.isArray(scores) || scores.length === 0) {
+        return res.status(200).json({ entries: [] });
       }
 
-      const entry = {
-        name: String(name).slice(0, 40),
-        nota,
-        type,
-        task: task ? String(task).slice(0, 200) : '',
-        justificativa: justificativa ? String(justificativa).slice(0, 300) : '',
-        timestamp: Date.now()
-      };
+      const members = [];
+      for (let index = 0; index < scores.length; index += 2) {
+        members.push(scores[index]);
+      }
 
-      await redisCommand(['RPUSH', LIST_KEY, JSON.stringify(entry)]);
-      await redisCommand(['LTRIM', LIST_KEY, String(-MAX_ENTRIES), '-1']);
+      const [names] = await executePipeline(config, [
+        ['HMGET', PLAYER_NAMES_KEY, ...members]
+      ]);
 
-      return res.status(200).json({ success: true, entry });
+      const entries = members.map((member, index) => ({
+        name: names?.[index] || member,
+        score: Number(scores[index * 2 + 1])
+      }));
+
+      return res.status(200).json({ entries });
     }
 
-    return res.status(405).json({ error: 'Método não permitido' });
+    let body = req.body;
+
+    if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body);
+      } catch {
+        return res.status(400).json({
+          error: 'O corpo da requisição não contém um JSON válido.'
+        });
+      }
+    }
+
+    const name = typeof body?.name === 'string'
+      ? body.name.trim().replace(/\s+/g, ' ').slice(0, 40)
+      : '';
+
+    const score = Number(body?.score);
+
+    if (!name || !Number.isInteger(score) || score < 0 || score > 100) {
+      return res.status(400).json({
+        error: 'Informe um nome e uma nota inteira entre 0 e 100.'
+      });
+    }
+
+    const member = name.normalize('NFKC').toLocaleLowerCase('pt-BR');
+
+    await executePipeline(config, [
+      ['ZADD', LEADERBOARD_KEY, 'GT', String(score), member],
+      ['HSET', PLAYER_NAMES_KEY, member, name]
+    ]);
+
+    return res.status(200).json({ success: true });
   } catch (error) {
-    console.error('Erro no leaderboard:', error);
-    return res.status(500).json({ error: 'Erro ao acessar o placar' });
+    console.error('Erro no placar:', error.message);
+
+    return res.status(502).json({
+      error: 'Não foi possível acessar o banco do placar.'
+    });
   }
 }
