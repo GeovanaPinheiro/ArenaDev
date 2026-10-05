@@ -13,64 +13,105 @@ export default async function handler(req, res) {
       body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     }
   } catch (error) {
-    return res.status(400).json({ error: 'JSON inválido.' });
+    return res.status(400).json({ error: 'O corpo da requisição não contém um JSON válido.' });
   }
 
   const { task, submissions, type } = body || {};
   if (!task || !submissions || !type) {
-    return res.status(400).json({ error: 'Dados incompletos enviados pela arena.' });
+    return res.status(400).json({ error: 'Requisição inválida. Faltam dados do desafio.' });
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return res.status(500).json({ error: 'A chave da API do Gemini não está configurada.' });
+    return res.status(500).json({ error: 'Chave da API não configurada no servidor' });
   }
 
-  // O prompt agora ensina o formato exato em vez de depender do responseSchema
-  const systemPrompt = type === 'prompt'
-    ? `Você é um juiz de Engenharia de Prompts. Avalie as submissões considerando: 1. Precisão 2. Técnicas. Dê uma nota de 0 a 100. Você DEVE retornar EXATAMENTE este JSON, sem nenhum texto antes ou depois: { "ranking": [ { "id": "user", "nota": 95, "justificativa": "frase curta aqui" } ] }`
-    : `Você é um Tech Lead avaliando código. Avalie rigorosamente: 1. Correção 2. Complexidade 3. Clean Code. Dê uma nota de 0 a 100. Você DEVE retornar EXATAMENTE este JSON, sem nenhum texto antes ou depois: { "ranking": [ { "id": "user", "nota": 95, "justificativa": "frase curta aqui" } ] }`;
+  // Voltando estritamente ao modelo tradicional que funcionava no seu código
+  const model = 'gemini-flash-lite-latest';
 
-  const input = `${systemPrompt}\n\nDesafio: ${task}\n\nSubmissões: ${JSON.stringify(submissions)}`;
+  const systemPrompt = type === 'prompt'
+    ? `Você é um juiz especialista em Engenharia de Prompts. Receberá um desafio e uma lista de prompts submetidos. Avalie cada um considerando: 1. Precisão e Clareza: restringe alucinações? 2. Técnicas: usa personas, few-shot ou define formato? Atribua uma nota de 0 a 100 para cada um. Retorne somente o JSON solicitado.`
+    : `Você é um Tech Lead Sênior avaliando código. Receberá um desafio algorítmico e soluções de competidores. Avalie rigorosamente: 1. Correção: resolve o problema? 2. Complexidade de tempo e espaço 3. Clean Code. Atribua uma nota de 0 a 100 para cada um. Retorne somente o JSON solicitado.`;
+
+  const rankingSchema = {
+    type: 'object',
+    properties: {
+      ranking: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            nota: { type: 'integer' },
+            justificativa: { type: 'string' }
+          },
+          required: ['id', 'nota', 'justificativa']
+        }
+      }
+    },
+    required: ['ranking']
+  };
+
+  const input = `${systemPrompt} Avalie todas as submissões para o desafio informado. Preserve os IDs recebidos. Dados: ${JSON.stringify({ desafio: task, submissoes: submissions })}`;
 
   try {
-    // Chamada direta ao modelo mais estável e universal
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`,
+    // Restaurando a chamada original que funcionava para si
+    const geminiResponse = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/interactions',
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey
+        },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: input }] }]
+          model: model,
+          input: input,
+          store: false,
+          response_format: {
+            type: 'text',
+            mime_type: 'application/json',
+            schema: rankingSchema
+          }
         })
       }
     );
 
-    const responseText = await response.text();
+    if (!geminiResponse.ok) {
+      const errorText = await geminiResponse.text();
+      console.error('Erro Gemini:', errorText);
+      
+      // Se a API estiver temporariamente ocupada, avisa o frontend para tentar novamente
+      if ([429, 503].includes(geminiResponse.status)) {
+        return res.status(503).json({
+          error: 'A IA avaliadora está temporariamente indisponível. Aguarde alguns segundos e tente novamente.',
+          code: 'AI_UNAVAILABLE'
+        });
+      }
+      
+      return res.status(502).json({ error: 'Falha ao consultar o Gemini.' });
+    }
+
+    const result = await geminiResponse.json();
     
-    if (!response.ok) {
-      console.error("Erro da API Gemini:", responseText);
-      let errorMsg = 'Falha ao consultar o Gemini.';
-      try {
-        errorMsg = JSON.parse(responseText).error.message;
-      } catch(e) {}
-      return res.status(502).json({ error: errorMsg });
+    // Restaurando a extração original de texto
+    const responseText = result.output_text 
+      || result.steps
+          ?.filter(step => step.type === 'model_output')
+          .flatMap(step => step.content || [])
+          .filter(content => content.type === 'text')
+          .map(content => content.text)
+          .join('');
+
+    if (!responseText) {
+      return res.status(502).json({ error: 'O Gemini retornou uma resposta vazia ou inválida.' });
     }
 
-    const result = JSON.parse(responseText);
-    let outText = result.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    if (!outText) {
-      return res.status(502).json({ error: 'O Gemini retornou uma resposta vazia.' });
-    }
-
-    // Limpeza de possíveis blocos de código (markdown) que o gemini-pro adora colocar
-    outText = outText.replace(/```json/gi, '').replace(/```/g, '').trim();
-
-    return res.status(200).json(JSON.parse(outText));
+    const parsed = JSON.parse(responseText);
+    return res.status(200).json(parsed);
 
   } catch (error) {
     console.error('Erro no handler:', error);
-    return res.status(500).json({ error: 'Erro interno ao processar a avaliação.' });
+    return res.status(500).json({ error: 'Erro interno ao avaliar submissões.' });
   }
 }
