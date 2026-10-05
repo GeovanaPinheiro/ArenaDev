@@ -57,80 +57,79 @@ export default async function handler(req, res) {
     });
   }
 
-  const models = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+  const models = ['gemini-3.8-flash', 'gemini-flash-lite-latest'];
 
   const systemPrompt = type === 'prompt'
     ? `Você é um juiz especialista em Engenharia de Prompts.
 Receberá um desafio e uma lista de prompts submetidos.
 Avalie cada um considerando:
-1. Precisão e Clareza: Restringe alucinações?
-2. Técnicas: Usa personas, few-shot, ou define formato?
+1. Precisão e Clareza: restringe alucinações?
+2. Técnicas: usa personas, few-shot ou define formato?
 Atribua uma nota de 0 a 100 para cada um.
-Retorne um JSON estrito validando o schema solicitado.`
+Retorne somente o JSON solicitado.`
     : `Você é um Tech Lead Sênior avaliando código.
 Receberá um desafio algorítmico e soluções de competidores.
 Avalie rigorosamente:
-1. Correção (resolve o problema?).
-2. Complexidade de Tempo/Espaço (Eficiência).
+1. Correção: resolve o problema?
+2. Complexidade de tempo e espaço.
 3. Clean Code.
 Atribua uma nota de 0 a 100 para cada um.
-Retorne um JSON estrito validando o schema solicitado.`;
+Retorne somente o JSON solicitado.`;
 
-  const payload = {
-    contents: [
-      {
-        parts: [
-          {
-            text: JSON.stringify({
-              desafio: task,
-              submissoes: submissions
-            })
-          }
-        ]
-      }
-    ],
-    systemInstruction: {
-      parts: [{ text: systemPrompt }]
-    },
-    generationConfig: {
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: 'OBJECT',
-        properties: {
-          ranking: {
-            type: 'ARRAY',
-            items: {
-              type: 'OBJECT',
-              properties: {
-                id: { type: 'STRING' },
-                nota: { type: 'INTEGER' },
-                justificativa: {
-                  type: 'STRING',
-                  description: 'Avaliação técnica direta, 1 a 2 frases.'
-                }
-              },
-              required: ['id', 'nota', 'justificativa']
+  const rankingSchema = {
+    type: 'object',
+    properties: {
+      ranking: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            nota: { type: 'integer' },
+            justificativa: {
+              type: 'string',
+              description: 'Avaliação técnica direta, de uma a duas frases.'
             }
-          }
-        },
-        required: ['ranking']
+          },
+          required: ['id', 'nota', 'justificativa']
+        }
       }
-    }
+    },
+    required: ['ranking']
   };
+
+  const input = `${systemPrompt}
+
+Avalie todas as submissões para o desafio informado. Preserve os IDs recebidos.
+
+Dados:
+${JSON.stringify({ desafio: task, submissoes: submissions })}`;
 
   try {
     let geminiResponse;
     let lastErrorText = '';
 
     for (const model of models) {
-      const apiUrl =
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-      geminiResponse = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      geminiResponse = await fetch(
+        'https://generativelanguage.googleapis.com/v1beta/interactions',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey
+          },
+          body: JSON.stringify({
+            model,
+            input,
+            store: false,
+            response_format: {
+              type: 'text',
+              mime_type: 'application/json',
+              schema: rankingSchema
+            }
+          })
+        }
+      );
 
       if (geminiResponse.ok) {
         break;
@@ -139,27 +138,40 @@ Retorne um JSON estrito validando o schema solicitado.`;
       lastErrorText = await geminiResponse.text();
       console.error(`Erro Gemini (${model}):`, lastErrorText);
 
-      const isTemporaryError = [429, 500, 502, 503, 504].includes(
-        geminiResponse.status
-      );
+      const canTryAnotherModel =
+        [404, 429, 500, 502, 503, 504].includes(geminiResponse.status) &&
+        model !== models[models.length - 1];
 
-      if (!isTemporaryError || model === models[models.length - 1]) {
-        if ([429, 503].includes(geminiResponse.status)) {
-          return res.status(503).json({
-            error: 'A IA avaliadora está temporariamente indisponível. Aguarde alguns segundos e tente novamente.',
-            code: 'AI_UNAVAILABLE'
-          });
-        }
+      if (canTryAnotherModel) {
+        continue;
+      }
 
-        return res.status(502).json({
-          error: 'Falha ao consultar o Gemini'
+      if ([429, 503].includes(geminiResponse.status)) {
+        return res.status(503).json({
+          error: 'A IA avaliadora está temporariamente indisponível. Aguarde alguns segundos e tente novamente.',
+          code: 'AI_UNAVAILABLE'
         });
       }
+
+      let providerMessage = 'Falha ao consultar o Gemini.';
+
+      try {
+        const providerError = JSON.parse(lastErrorText);
+        providerMessage = providerError.error?.message || providerMessage;
+      } catch {
+        providerMessage = lastErrorText || providerMessage;
+      }
+
+      return res.status(502).json({
+        error: providerMessage,
+        code: geminiResponse.status === 404
+          ? 'MODEL_NOT_AVAILABLE'
+          : 'GEMINI_REQUEST_FAILED'
+      });
     }
 
     if (!geminiResponse || !geminiResponse.ok) {
       console.error('Todos os modelos Gemini falharam:', lastErrorText);
-
       return res.status(503).json({
         error: 'A IA avaliadora está temporariamente indisponível. Aguarde alguns segundos e tente novamente.',
         code: 'AI_UNAVAILABLE'
@@ -167,12 +179,23 @@ Retorne um JSON estrito validando o schema solicitado.`;
     }
 
     const result = await geminiResponse.json();
-    const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+    const responseText = result.output_text
+      || result.steps
+        ?.filter(step => step.type === 'model_output')
+        .flatMap(step => step.content || [])
+        .filter(content => content.type === 'text')
+        .map(content => content.text)
+        .join('');
 
     if (!responseText) {
-      console.error('Resposta do Gemini sem conteúdo esperado:', result);
+      console.error(
+        'Resposta do Gemini sem texto de saída:',
+        JSON.stringify(result)
+      );
+
       return res.status(502).json({
-        error: 'O Gemini retornou uma resposta vazia ou inválida.'
+        error: 'O Gemini retornou uma resposta vazia ou inválida.',
+        code: 'EMPTY_MODEL_RESPONSE'
       });
     }
 
@@ -180,7 +203,6 @@ Retorne um JSON estrito validando o schema solicitado.`;
     return res.status(200).json(parsed);
   } catch (error) {
     console.error('Erro no handler:', error);
-
     return res.status(500).json({
       error: 'Erro interno ao avaliar submissões'
     });
