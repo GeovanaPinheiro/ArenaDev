@@ -98,7 +98,23 @@
 </head>
 <body class="min-h-screen flex flex-col antialiased">
 
-    <header class="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
+    <section id="welcome-view" class="flex-grow flex items-center justify-center px-4 py-12">
+        <form onsubmit="enterArena(event)" class="glass-card w-full max-w-md rounded-2xl p-8 space-y-5">
+            <div class="text-center">
+                <div class="mx-auto mb-4 w-12 h-12 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold">
+                    <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                </div>
+                <h1 class="text-2xl font-bold text-slate-800">Dev Arena</h1>
+                <p class="mt-2 text-sm text-slate-500">Informe seu nome para entrar e registrar sua melhor nota no placar global.</p>
+            </div>
+            <label for="player-name-input" class="block text-sm font-medium text-slate-700">Seu nome</label>
+            <input id="player-name-input" maxlength="40" required class="w-full rounded-lg border border-slate-300 px-4 py-3 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" placeholder="Como devemos chamar você?">
+            <p id="player-name-error" class="hidden text-sm text-red-600"></p>
+            <button type="submit" class="w-full rounded-lg bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700">Entrar na Arena</button>
+        </form>
+    </section>
+
+    <header id="app-header" class="hidden bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
             <div class="flex items-center gap-3">
                 <div class="w-8 h-8 rounded bg-blue-600 flex items-center justify-center text-white font-bold">
@@ -115,10 +131,27 @@
                     Logic Arena
                 </button>
             </nav>
+            <div class="flex items-center gap-3">
+                <span id="current-player-name" class="hidden sm:inline text-sm font-medium text-slate-600"></span>
+                <button onclick="changePlayer()" class="text-xs text-blue-600 hover:text-blue-800 font-medium">Trocar nome</button>
+            </div>
         </div>
     </header>
 
-    <main class="flex-grow w-full max-w-7xl mx-auto px-4 py-8 flex flex-col items-center">
+    <main id="app-main" class="hidden flex-grow w-full max-w-7xl mx-auto px-4 py-8 flex flex-col items-center">
+
+        <section class="glass-card w-full rounded-xl overflow-hidden mb-8">
+            <div class="flex items-center justify-between gap-4 border-b border-slate-200 bg-slate-50 px-5 py-4">
+                <div>
+                    <h2 class="font-bold text-slate-800">Placar global</h2>
+                    <p class="text-xs text-slate-500">Melhor nota registrada por participante</p>
+                </div>
+                <button onclick="loadLeaderboard()" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50">Atualizar</button>
+            </div>
+            <ol id="leaderboard-list" class="divide-y divide-slate-100 px-5">
+                <li class="py-4 text-sm text-slate-500">Carregando placar...</li>
+            </ol>
+        </section>
 
         <!-- View: Prompt Arena -->
         <div id="view-prompt" class="w-full space-y-6 fade-in">
@@ -162,8 +195,7 @@
 
                 <div class="space-y-4">
                     <div class="glass-card rounded-xl p-5">
-                        <h3 class="font-semibold text-slate-800 text-sm mb-4 border-b border-slate-100 pb-2">Competidores</h3>
-                        <div class="space-y-3" id="prompt-competitors-list"></div>
+                        <h3 class="font-semibold text-slate-800 text-sm mb-4 border-b border-slate-100 pb-2">Avaliação</h3>
                         <div class="mt-6">
                             <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Critérios de Avaliação</h4>
                             <ul class="space-y-2 text-sm text-slate-600">
@@ -225,8 +257,7 @@
 
                 <div class="space-y-4">
                     <div class="glass-card rounded-xl p-5">
-                        <h3 class="font-semibold text-slate-800 text-sm mb-4 border-b border-slate-100 pb-2">Competidores</h3>
-                        <div class="space-y-3" id="logic-competitors-list"></div>
+                        <h3 class="font-semibold text-slate-800 text-sm mb-4 border-b border-slate-100 pb-2">Avaliação</h3>
                         <div class="mt-6">
                             <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Critérios (Tech Lead)</h4>
                             <ul class="space-y-2 text-sm text-slate-600">
@@ -271,7 +302,7 @@
                 <!-- 2nd Place -->
                 <div class="flex flex-col items-center flex-1 max-w-[160px]" id="podium-2">
                     <div class="text-center mb-3">
-                        <div class="font-semibold text-slate-600 text-sm truncate w-full px-1" id="name-2">Bot</div>
+                        <div class="font-semibold text-slate-600 text-sm truncate w-full px-1" id="name-2">-</div>
                         <div class="text-xl font-bold text-slate-400" id="score-2">0</div>
                     </div>
                     <div class="w-full podium-2 rounded-t-lg flex justify-center pt-3 relative border-x border-slate-200">
@@ -293,7 +324,7 @@
                 <!-- 3rd Place -->
                 <div class="flex flex-col items-center flex-1 max-w-[160px]" id="podium-3">
                     <div class="text-center mb-3">
-                        <div class="font-semibold text-slate-600 text-sm truncate w-full px-1" id="name-3">Bot</div>
+                        <div class="font-semibold text-slate-600 text-sm truncate w-full px-1" id="name-3">-</div>
                         <div class="text-xl font-bold text-slate-400" id="score-3">0</div>
                     </div>
                     <div class="w-full podium-3 rounded-t-lg flex justify-center pt-3 relative border-x border-slate-200">
@@ -317,44 +348,29 @@
     <script>
         // --- State and Data ---
         let currentTab = 'prompt'; // 'prompt' or 'logic'
+        let currentPlayerName = '';
         let currentPromptChallengeIndex = 0;
         let currentLogicChallengeIndex = 0;
 
         const PROMPT_CHALLENGES = [
             {
                 id: 1,
-                task: "Desenvolva um prompt detalhado para gerar uma apresentação instrutiva de 20 slides sobre IA e chatbots para alunos do ensino médio.",
-                bots: [
-                    { id: "bot_alpha", name: "Bot Alpha", input: "Faça uma apresentação sobre inteligência artificial e chatbots. Precisa ter 20 slides para adolescentes." },
-                    { id: "bot_lumxx", name: "LumxxBot", input: "Atue como um professor especialista em tecnologia. Crie um esboço para uma apresentação de 20 slides focada em alunos do ensino médio sobre 'IA e Chatbots'. O formato deve ser estruturado em Markdown, contendo para cada slide: Título, Tópicos principais (bullet points) e uma sugestão de imagem/gráfico visual. Cubra a história da IA, como LLMs funcionam, exemplos de uso e questões éticas." }
-                ]
+                task: "Desenvolva um prompt detalhado para gerar uma apresentação instrutiva de 20 slides sobre IA e chatbots para alunos do ensino médio."
             },
             {
                 id: 2,
-                task: "Crie um prompt para extrair informações estruturadas (Nome, Idade, Profissão, e Doenças Prévias) de um texto médico desestruturado longo e formatar como JSON estrito.",
-                bots: [
-                    { id: "bot_alpha", name: "Bot Alpha", input: "Leia o texto abaixo e me dê um JSON com nome, idade, profissão e doenças. Texto: [TEXTO AQUI]" },
-                    { id: "bot_lumxx", name: "LumxxBot", input: "Sua tarefa é atuar como um extrator de dados de prontuários médicos. Analise o texto fornecido pelo usuário e extraia as seguintes entidades: Nome (string), Idade (inteiro), Profissão (string), Doencas_Previas (array de strings). Retorne ESTritamente um objeto JSON válido, sem texto adicional de introdução ou conclusão. Se um dado não estiver presente, use null. Exemplo de saída: { \"Nome\": \"João\", \"Idade\": 45... }" }
-                ]
+                task: "Crie um prompt para extrair informações estruturadas (Nome, Idade, Profissão, e Doenças Prévias) de um texto médico desestruturado longo e formatar como JSON estrito."
             }
         ];
 
         const LOGIC_CHALLENGES = [
             {
                 id: 1,
-                task: "Escreva um programa em C que utilize técnicas de currying ou aplicação parcial para alocação dinâmica de memória de uma matriz 2D.",
-                bots: [
-                    { id: "bot_tech", name: "TechBot", input: "int main() {\n  // Nao entendi currying em C, vou alocar normal\n  int** matriz = malloc(100);\n  return 0;\n}" },
-                    { id: "bot_algo", name: "AlgoExpert", input: "// Simulacao de aplicacao parcial via ponteiros/structs\ntypedef int** (*MatrixAllocPartial)(int rows);\n\nint** alloc_cols(int rows, int cols) {\n  int** m = malloc(rows * sizeof(int*));\n  for(int i=0; i<rows; i++) m[i] = malloc(cols * sizeof(int));\n  return m;\n}\n// O currying real em C exige uso de closures gcc ou structs de estado." }
-                ]
+                task: "Escreva um programa em C que utilize técnicas de currying ou aplicação parcial para alocação dinâmica de memória de uma matriz 2D."
             },
             {
                 id: 2,
-                task: "Implemente um algoritmo de busca em grafos para encontrar o caminho mais curto, considerando um grafo não direcionado não ponderado.",
-                bots: [
-                    { id: "bot_tech", name: "TechBot", input: "function findShortestPath(graph, start, target) {\n  // Tentando ir pelo primeiro caminho sempre (DFS errado para menor caminho)\n  let current = start;\n  let path = [current];\n  while(current !== target && graph[current]) {\n    current = graph[current][0];\n    path.push(current);\n  }\n  return path;\n}" },
-                    { id: "bot_algo", name: "AlgoExpert", input: "function bfsShortestPath(graph, start, end) {\n  const queue = [[start]];\n  const visited = new Set([start]);\n\n  while (queue.length > 0) {\n    const path = queue.shift();\n    const node = path[path.length - 1];\n\n    if (node === end) return path;\n\n    for (const neighbor of graph[node] || []) {\n      if (!visited.has(neighbor)) {\n        visited.add(neighbor);\n        queue.push([...path, neighbor]);\n      }\n    }\n  }\n  return null;\n}" }
-                ]
+                task: "Implemente um algoritmo de busca em grafos para encontrar o caminho mais curto, considerando um grafo não direcionado não ponderado."
             }
         ];
 
@@ -369,6 +385,88 @@
         function init() {
             loadChallenge('prompt', currentPromptChallengeIndex);
             loadChallenge('logic', currentLogicChallengeIndex);
+
+            const savedName = localStorage.getItem('dev-arena-player-name');
+            if (savedName) {
+                document.getElementById('player-name-input').value = savedName;
+                enterArena();
+            }
+        }
+
+        function enterArena(event) {
+            if (event) event.preventDefault();
+
+            const nameInput = document.getElementById('player-name-input');
+            const errorEl = document.getElementById('player-name-error');
+            const name = nameInput.value.trim().replace(/\s+/g, ' ');
+
+            if (!name) {
+                errorEl.textContent = 'Digite seu nome para continuar.';
+                errorEl.classList.remove('hidden');
+                nameInput.focus();
+                return;
+            }
+
+            currentPlayerName = name.slice(0, 40);
+            localStorage.setItem('dev-arena-player-name', currentPlayerName);
+            document.getElementById('current-player-name').textContent = currentPlayerName;
+            document.getElementById('welcome-view').classList.add('hidden');
+            document.getElementById('app-header').classList.remove('hidden');
+            document.getElementById('app-main').classList.remove('hidden');
+            errorEl.classList.add('hidden');
+            loadLeaderboard();
+        }
+
+        function changePlayer() {
+            localStorage.removeItem('dev-arena-player-name');
+            document.getElementById('app-header').classList.add('hidden');
+            document.getElementById('app-main').classList.add('hidden');
+            document.getElementById('welcome-view').classList.remove('hidden');
+            document.getElementById('player-name-input').value = currentPlayerName;
+        }
+
+        async function loadLeaderboard() {
+            const list = document.getElementById('leaderboard-list');
+            list.replaceChildren();
+
+            try {
+                const response = await fetch('/api/leaderboard');
+                const data = await response.json().catch(() => ({}));
+
+                if (!response.ok) {
+                    throw new Error(data.error || `Falha ao carregar o placar (HTTP ${response.status}).`);
+                }
+
+                if (!Array.isArray(data.entries) || data.entries.length === 0) {
+                    const empty = document.createElement('li');
+                    empty.className = 'py-4 text-sm text-slate-500';
+                    empty.textContent = 'Ainda não há notas registradas.';
+                    list.appendChild(empty);
+                    return;
+                }
+
+                data.entries.forEach((entry, index) => {
+                    const row = document.createElement('li');
+                    row.className = 'flex items-center justify-between gap-4 py-3 text-sm';
+
+                    const player = document.createElement('span');
+                    player.className = 'truncate font-medium text-slate-700';
+                    player.textContent = `${index + 1}. ${entry.name}`;
+
+                    const score = document.createElement('span');
+                    score.className = 'font-bold text-blue-600';
+                    score.textContent = `${entry.score} pontos`;
+
+                    row.append(player, score);
+                    list.appendChild(row);
+                });
+            } catch (error) {
+                console.error('Erro ao carregar placar:', error);
+                const row = document.createElement('li');
+                row.className = 'py-4 text-sm text-red-600';
+                row.textContent = error.message || 'Não foi possível carregar o placar.';
+                list.appendChild(row);
+            }
         }
 
         function switchTab(tabId) {
@@ -396,31 +494,11 @@
                 const session = PROMPT_CHALLENGES[index];
                 document.getElementById('prompt-challenge-text').textContent = session.task;
                 document.getElementById('prompt-input').value = '';
-                renderBots('prompt-competitors-list', session.bots);
             } else {
                 const session = LOGIC_CHALLENGES[index];
                 document.getElementById('logic-challenge-text').textContent = session.task;
                 document.getElementById('logic-input').value = '';
-                renderBots('logic-competitors-list', session.bots);
             }
-        }
-
-        function renderBots(containerId, bots) {
-            const container = document.getElementById(containerId);
-            container.innerHTML = '';
-            bots.forEach((bot) => {
-                container.innerHTML += `
-                    <div class="flex items-center justify-between bg-white border border-slate-100 p-2.5 rounded-lg shadow-sm">
-                        <div class="flex items-center gap-3">
-                            <div class="w-7 h-7 rounded bg-slate-100 border border-slate-200 flex items-center justify-center font-bold text-slate-500 text-xs">
-                                ${bot.name.charAt(0)}
-                            </div>
-                            <span class="font-medium text-slate-600 text-sm">${bot.name}</span>
-                        </div>
-                        <span class="text-[10px] uppercase font-bold text-emerald-500 bg-emerald-50 px-2 py-1 rounded border border-emerald-100">Ready</span>
-                    </div>
-                `;
-            });
         }
 
         function cycleChallenge(type) {
@@ -446,8 +524,7 @@
 
             const session = PROMPT_CHALLENGES[currentPromptChallengeIndex];
             const submissions = [
-                { id: "user", nome: "Você (Engenheiro de Prompts)", input: val },
-                ...session.bots.map(b => ({ id: b.id, nome: b.name, input: b.input }))
+                { id: "user", nome: currentPlayerName, input: val }
             ];
 
             startEvaluation("O Gemini (Juiz) está avaliando a engenharia dos prompts...");
@@ -466,8 +543,7 @@
 
             const session = LOGIC_CHALLENGES[currentLogicChallengeIndex];
             const submissions = [
-                { id: "user", nome: "Você (Desenvolvedor)", input: val },
-                ...session.bots.map(b => ({ id: b.id, nome: b.name, input: b.input }))
+                { id: "user", nome: currentPlayerName, input: val }
             ];
 
             startEvaluation("O Tech Lead virtual está executando análise estática e Big-O...");
@@ -493,6 +569,15 @@
         async function processEvaluation(task, submissions, type) {
             try {
                 const evaluationResult = await callEvaluationAPI(task, submissions, type);
+                const userResult = evaluationResult.ranking.find(item => item.id === 'user');
+                if (userResult) {
+                    try {
+                        await saveBestScore(userResult.nota);
+                    } catch (leaderboardError) {
+                        console.error('Erro ao salvar nota no placar:', leaderboardError);
+                        showLeaderboardError(leaderboardError.message);
+                    }
+                }
                 renderResults(evaluationResult, submissions, type);
             } catch (error) {
                 console.error("API Error:", error);
@@ -509,6 +594,29 @@
                     targetView.classList.remove('text-red-500');
                 }, 3000);
             }
+        }
+
+        async function saveBestScore(score) {
+            const response = await fetch('/api/leaderboard', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: currentPlayerName, score })
+            });
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                throw new Error(data.error || `Falha ao salvar no placar (HTTP ${response.status}).`);
+            }
+
+            await loadLeaderboard();
+        }
+
+        function showLeaderboardError(message) {
+            const list = document.getElementById('leaderboard-list');
+            const row = document.createElement('li');
+            row.className = 'py-4 text-sm text-red-600';
+            row.textContent = `A avaliação terminou, mas a nota não foi salva no placar: ${message}`;
+            list.prepend(row);
         }
 
         // --- Chamada ao backend seguro (Vercel Function) em vez do Gemini direto ---
