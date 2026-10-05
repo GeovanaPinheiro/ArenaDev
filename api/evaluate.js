@@ -53,7 +53,7 @@ export default async function handler(req, res) {
   }
 
   // Modelos atualizados para garantir compatibilidade com a chave gratuita
-  const models = ['gemini-1.5-flash', 'gemini-1.5-flash-8b'];
+  const models = ['gemini-1.5-flash', 'gemini-1.5-flash-latest'];
 
   const systemPrompt = type === 'prompt'
     ? `Você é um juiz especialista em Engenharia de Prompts. Receberá um desafio e uma lista de prompts submetidos. Avalie cada um considerando: 1. Precisão e Clareza: restringe alucinações? 2. Técnicas: usa personas, few-shot ou define formato? Atribua uma nota de 0 a 100 para cada um. Retorne somente o JSON solicitado.`
