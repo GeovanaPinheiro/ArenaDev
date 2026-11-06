@@ -1,9 +1,10 @@
-export default async function handler(req, res) {
+﻿export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Método não permitido' });
   }
 
   let body = req.body;
+
   try {
     if (typeof body === 'string') {
       body = JSON.parse(body);
@@ -13,25 +14,67 @@ export default async function handler(req, res) {
       body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     }
   } catch (error) {
-    return res.status(400).json({ error: 'O corpo da requisição não contém um JSON válido.' });
+    console.error('Corpo JSON inválido:', error.message);
+    return res.status(400).json({
+      error: 'O corpo da requisição não contém um JSON válido.',
+      code: 'INVALID_JSON'
+    });
   }
 
   const { task, submissions, type } = body || {};
-  if (!task || !submissions || !type) {
-    return res.status(400).json({ error: 'Requisição inválida. Faltam dados do desafio.' });
+  const missingFields = [];
+
+  if (typeof task !== 'string' || !task.trim()) {
+    missingFields.push('task');
+  }
+
+  if (!Array.isArray(submissions) || submissions.length === 0) {
+    missingFields.push('submissions');
+  }
+
+  if (!['prompt', 'logic'].includes(type)) {
+    missingFields.push('type');
+  }
+
+  if (missingFields.length > 0) {
+    console.error(
+      'Requisição de avaliação inválida; campos ausentes ou inválidos:',
+      missingFields
+    );
+
+    return res.status(400).json({
+      error: `Requisição inválida. Verifique os campos: ${missingFields.join(', ')}.`,
+      code: 'INVALID_REQUEST',
+      fields: missingFields
+    });
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
+
   if (!apiKey) {
-    return res.status(500).json({ error: 'Chave da API não configurada no servidor' });
+    return res.status(500).json({
+      error: 'Chave da API não configurada no servidor'
+    });
   }
 
-  // Voltando estritamente ao modelo tradicional que funcionava no seu código
-  const model = 'gemini-flash-lite-latest';
+  const models = ['gemini-3.8-flash', 'gemini-flash-lite-latest'];
 
   const systemPrompt = type === 'prompt'
-    ? `Você é um juiz especialista em Engenharia de Prompts. Receberá um desafio e uma lista de prompts submetidos. Avalie cada um considerando: 1. Precisão e Clareza: restringe alucinações? 2. Técnicas: usa personas, few-shot ou define formato? Atribua uma nota de 0 a 100 para cada um. Retorne somente o JSON solicitado.`
-    : `Você é um Tech Lead Sênior avaliando código. Receberá um desafio algorítmico e soluções de competidores. Avalie rigorosamente: 1. Correção: resolve o problema? 2. Complexidade de tempo e espaço 3. Clean Code. Atribua uma nota de 0 a 100 para cada um. Retorne somente o JSON solicitado.`;
+    ? `Você é um juiz especialista em Engenharia de Prompts.
+Receberá um desafio e uma lista de prompts submetidos.
+Avalie cada um considerando:
+1. Precisão e Clareza: restringe alucinações?
+2. Técnicas: usa personas, few-shot ou define formato?
+Atribua uma nota de 0 a 100 para cada um.
+Retorne somente o JSON solicitado.`
+    : `Você é um Tech Lead Sênior avaliando código.
+Receberá um desafio algorítmico e soluções de competidores.
+Avalie rigorosamente:
+1. Correção: resolve o problema?
+2. Complexidade de tempo e espaço.
+3. Clean Code.
+Atribua uma nota de 0 a 100 para cada um.
+Retorne somente o JSON solicitado.`;
 
   const rankingSchema = {
     type: 'object',
@@ -43,7 +86,10 @@ export default async function handler(req, res) {
           properties: {
             id: { type: 'string' },
             nota: { type: 'integer' },
-            justificativa: { type: 'string' }
+            justificativa: {
+              type: 'string',
+              description: 'Avaliação técnica direta, de uma a duas frases.'
+            }
           },
           required: ['id', 'nota', 'justificativa']
         }
@@ -52,66 +98,113 @@ export default async function handler(req, res) {
     required: ['ranking']
   };
 
-  const input = `${systemPrompt} Avalie todas as submissões para o desafio informado. Preserve os IDs recebidos. Dados: ${JSON.stringify({ desafio: task, submissoes: submissions })}`;
+  const input = `${systemPrompt}
+
+Avalie todas as submissões para o desafio informado. Preserve os IDs recebidos.
+
+Dados:
+${JSON.stringify({ desafio: task, submissoes: submissions })}`;
 
   try {
-    // Restaurando a chamada original que funcionava para si
-    const geminiResponse = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/interactions',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': apiKey
-        },
-        body: JSON.stringify({
-          model: model,
-          input: input,
-          store: false,
-          response_format: {
-            type: 'text',
-            mime_type: 'application/json',
-            schema: rankingSchema
-          }
-        })
-      }
-    );
+    let geminiResponse;
+    let lastErrorText = '';
 
-    if (!geminiResponse.ok) {
-      const errorText = await geminiResponse.text();
-      console.error('Erro Gemini:', errorText);
-      
-      // Se a API estiver temporariamente ocupada, avisa o frontend para tentar novamente
+    for (const model of models) {
+      geminiResponse = await fetch(
+        'https://generativelanguage.googleapis.com/v1beta/interactions',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey
+          },
+          body: JSON.stringify({
+            model,
+            input,
+            store: false,
+            response_format: {
+              type: 'text',
+              mime_type: 'application/json',
+              schema: rankingSchema
+            }
+          })
+        }
+      );
+
+      if (geminiResponse.ok) {
+        break;
+      }
+
+      lastErrorText = await geminiResponse.text();
+      console.error(`Erro Gemini (${model}):`, lastErrorText);
+
+      const canTryAnotherModel =
+        [404, 429, 500, 502, 503, 504].includes(geminiResponse.status) &&
+        model !== models[models.length - 1];
+
+      if (canTryAnotherModel) {
+        continue;
+      }
+
       if ([429, 503].includes(geminiResponse.status)) {
         return res.status(503).json({
           error: 'A IA avaliadora está temporariamente indisponível. Aguarde alguns segundos e tente novamente.',
           code: 'AI_UNAVAILABLE'
         });
       }
-      
-      return res.status(502).json({ error: 'Falha ao consultar o Gemini.' });
+
+      let providerMessage = 'Falha ao consultar o Gemini.';
+
+      try {
+        const providerError = JSON.parse(lastErrorText);
+        providerMessage = providerError.error?.message || providerMessage;
+      } catch {
+        providerMessage = lastErrorText || providerMessage;
+      }
+
+      return res.status(502).json({
+        error: providerMessage,
+        code: geminiResponse.status === 404
+          ? 'MODEL_NOT_AVAILABLE'
+          : 'GEMINI_REQUEST_FAILED'
+      });
+    }
+
+    if (!geminiResponse || !geminiResponse.ok) {
+      console.error('Todos os modelos Gemini falharam:', lastErrorText);
+      return res.status(503).json({
+        error: 'A IA avaliadora está temporariamente indisponível. Aguarde alguns segundos e tente novamente.',
+        code: 'AI_UNAVAILABLE'
+      });
     }
 
     const result = await geminiResponse.json();
-    
-    // Restaurando a extração original de texto
-    const responseText = result.output_text 
+    const responseText = result.output_text
       || result.steps
-          ?.filter(step => step.type === 'model_output')
-          .flatMap(step => step.content || [])
-          .filter(content => content.type === 'text')
-          .map(content => content.text)
-          .join('');
+        ?.filter(step => step.type === 'model_output')
+        .flatMap(step => step.content || [])
+        .filter(content => content.type === 'text')
+        .map(content => content.text)
+        .join('');
 
     if (!responseText) {
-      return res.status(502).json({ error: 'O Gemini retornou uma resposta vazia ou inválida.' });
+      console.error(
+        'Resposta do Gemini sem texto de saída:',
+        JSON.stringify(result)
+      );
+
+      return res.status(502).json({
+        error: 'O Gemini retornou uma resposta vazia ou inválida.',
+        code: 'EMPTY_MODEL_RESPONSE'
+      });
     }
 
     const parsed = JSON.parse(responseText);
     return res.status(200).json(parsed);
-
   } catch (error) {
     console.error('Erro no handler:', error);
-    return res.status(500).json({ error: 'Erro interno ao avaliar submissões.' });
+    return res.status(500).json({
+      error: 'Erro interno ao avaliar submissões'
+    });
   }
 }
